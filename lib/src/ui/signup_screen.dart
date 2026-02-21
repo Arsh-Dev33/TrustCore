@@ -107,12 +107,11 @@ class _SignupScreenState extends State<SignupScreen> {
       if (blinkDetected && mounted) {
         setState(() {
           _livenessCompleted = true;
-          _statusMessage = 'Liveness confirmed! Hold still to capture...';
+          _statusMessage =
+              'Liveness confirmed! Press capture button to register';
         });
         _cameraController?.stopImageStream();
         _livenessTimer?.cancel();
-        // Auto-capture after short delay
-        Future.delayed(const Duration(milliseconds: 500), _captureAndValidate);
       }
     });
   }
@@ -151,15 +150,6 @@ class _SignupScreenState extends State<SignupScreen> {
           _currentError = validation.error;
           _statusMessage = validation.message;
         });
-        if (!widget.config.requireLiveness) {
-          // Allow retry after delay
-          Future.delayed(
-            const Duration(seconds: 2),
-            () {
-              if (mounted && !_isCaptured) _captureAndValidate();
-            },
-          );
-        }
         return;
       }
 
@@ -250,17 +240,18 @@ class _SignupScreenState extends State<SignupScreen> {
               ),
             ),
 
-            // Top status bar
-            Positioned(
-              top: MediaQuery.of(context).padding.top + 16,
-              left: 16,
-              right: 16,
-              child: StatusBanner(
-                message: _statusMessage,
-                error: _currentError,
-                isSuccess: _isValid,
+            // Top status bar (only for errors or success)
+            if (_currentError != ValidationError.none || _isValid)
+              Positioned(
+                top: MediaQuery.of(context).padding.top + 16,
+                left: 16,
+                right: 16,
+                child: StatusBanner(
+                  message: _statusMessage,
+                  error: _currentError,
+                  isSuccess: _isValid,
+                ),
               ),
-            ),
 
             // Cancel button
             Positioned(
@@ -282,30 +273,82 @@ class _SignupScreenState extends State<SignupScreen> {
               ),
             ),
 
-            // Manual capture button (only when liveness is done but not auto-captured)
+            // Liveness status chip
+            if (widget.config.requireLiveness)
+              Positioned(
+                top: MediaQuery.of(context).padding.top + 12,
+                right: 12,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: (_livenessCompleted ? Colors.green : Colors.orange)
+                        .withValues(alpha: 0.8),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: Colors.white24, width: 1),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        _livenessCompleted ? Icons.verified : Icons.pending,
+                        color: Colors.white,
+                        size: 14,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        _livenessCompleted ? 'LIVE' : 'BLINK',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+            // Manual capture button (always visible if liveness is done/disabled)
             if (_livenessCompleted && !_isCaptured && !_isProcessing)
               Positioned(
                 bottom: 40,
                 left: 0,
                 right: 0,
                 child: Center(
-                  child: GestureDetector(
-                    onTap: _captureAndValidate,
-                    child: Container(
-                      width: 72,
-                      height: 72,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 4),
-                      ),
-                      child: Container(
-                        margin: const EdgeInsets.all(4),
-                        decoration: const BoxDecoration(
-                          shape: BoxShape.circle,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        'CAPTURE',
+                        style: TextStyle(
                           color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 2,
                         ),
                       ),
-                    ),
+                      const SizedBox(height: 12),
+                      GestureDetector(
+                        onTap: _captureAndValidate,
+                        child: Container(
+                          width: 72,
+                          height: 72,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.white, width: 4),
+                          ),
+                          child: Container(
+                            margin: const EdgeInsets.all(4),
+                            decoration: const BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),

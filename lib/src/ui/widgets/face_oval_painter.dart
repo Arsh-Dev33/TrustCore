@@ -21,10 +21,14 @@ class FaceOvalPainter extends CustomPainter {
       overlayPaint,
     );
 
+    // Use a fixed aspect ratio for the oval to prevent stretching on tall screens
+    final ovalWidth = size.width * 0.7;
+    final ovalHeight = ovalWidth * 1.35; // Standard face aspect ratio
+
     final ovalRect = Rect.fromCenter(
-      center: Offset(size.width / 2, size.height * 0.42),
-      width: size.width * 0.65,
-      height: size.height * 0.48,
+      center: Offset(size.width / 2, size.height * 0.45),
+      width: ovalWidth,
+      height: ovalHeight,
     );
 
     canvas.drawOval(ovalRect, Paint()..blendMode = BlendMode.clear);
