@@ -21,20 +21,25 @@ class FaceEmbeddingService {
 
   /// Initialize the TFLite interpreter from the bundled asset.
   Future<void> initialize() async {
-    try {
-      _interpreter = await Interpreter.fromAsset('assets/mobilefacenet.tflite');
-      debugPrint('TrustCore: MobileFaceNet model loaded successfully');
-    } catch (e) {
-      debugPrint('TrustCore: Failed to load model with assets/ prefix: $e');
-      // Try without prefix
+    // Flutter plugins must use packages/<pkg>/ prefix for assets
+    final assetPaths = [
+      'packages/trust_core/assets/mobilefacenet.tflite',
+      'assets/mobilefacenet.tflite',
+      'mobilefacenet.tflite',
+    ];
+
+    for (final path in assetPaths) {
       try {
-        _interpreter = await Interpreter.fromAsset('mobilefacenet.tflite');
-        debugPrint('TrustCore: MobileFaceNet model loaded (no prefix)');
-      } catch (e2) {
-        debugPrint('TrustCore: Failed to load model without prefix: $e2');
-        _initFailed = true;
+        _interpreter = await Interpreter.fromAsset(path);
+        debugPrint('TrustCore: MobileFaceNet model loaded from: $path');
+        return;
+      } catch (e) {
+        debugPrint('TrustCore: Failed to load model from $path: $e');
       }
     }
+
+    debugPrint('TrustCore: All asset paths failed!');
+    _initFailed = true;
   }
 
   /// Generate a face embedding from an image file and the detected face bounding box.

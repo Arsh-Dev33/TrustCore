@@ -9,7 +9,6 @@ import '../models/face_verify_error.dart';
 import '../models/face_record.dart';
 import '../models/face_validation_result.dart';
 import '../services/face_detection_service.dart';
-import '../services/face_embedding_service.dart';
 import '../services/face_storage_service.dart';
 import '../services/liveness_service.dart';
 import '../services/base64_service.dart';
@@ -35,7 +34,6 @@ class SignupScreen extends StatefulWidget {
 class _SignupScreenState extends State<SignupScreen> {
   CameraController? _cameraController;
   final FaceDetectionService _faceDetectionService = FaceDetectionService();
-  final FaceEmbeddingService _embeddingService = FaceEmbeddingService();
   final FaceStorageService _storageService = FaceStorageService();
   late final LivenessService _livenessService;
 
@@ -52,8 +50,7 @@ class _SignupScreenState extends State<SignupScreen> {
   void initState() {
     super.initState();
     _livenessService = LivenessService();
-    _embeddingService.initialize(); // Load model in background
-    _initCamera(); // Start camera immediately
+    _initCamera();
   }
 
   Future<void> _initCamera() async {
@@ -165,12 +162,6 @@ class _SignupScreenState extends State<SignupScreen> {
         return;
       }
 
-      // Generate real embedding using TFLite MobileFaceNet model
-      final embedding = await _embeddingService.getEmbedding(
-        image.path,
-        validation.boundingBox!,
-      );
-
       // Face is valid — save and return
       setState(() {
         _isValid = true;
@@ -189,7 +180,7 @@ class _SignupScreenState extends State<SignupScreen> {
       final record = FaceRecord(
         userId: widget.userId,
         imagePath: savedPath,
-        embedding: embedding,
+        embedding: [],
         registeredAt: DateTime.now().toUtc(),
       );
       await _storageService.storeFace(record);
@@ -227,7 +218,6 @@ class _SignupScreenState extends State<SignupScreen> {
   void dispose() {
     _cameraController?.dispose();
     _faceDetectionService.dispose();
-    _embeddingService.dispose();
     _livenessService.dispose();
     _livenessTimer?.cancel();
     super.dispose();
