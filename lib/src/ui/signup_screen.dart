@@ -52,12 +52,8 @@ class _SignupScreenState extends State<SignupScreen> {
   void initState() {
     super.initState();
     _livenessService = LivenessService();
-    _initAll();
-  }
-
-  Future<void> _initAll() async {
-    await _embeddingService.initialize();
-    _initCamera();
+    _embeddingService.initialize(); // Load model in background
+    _initCamera(); // Start camera immediately
   }
 
   Future<void> _initCamera() async {

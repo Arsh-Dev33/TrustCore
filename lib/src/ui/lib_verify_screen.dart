@@ -54,12 +54,8 @@ class _LibVerifyScreenState extends State<LibVerifyScreen> {
   void initState() {
     super.initState();
     _livenessService = LivenessService();
-    _initEmbeddingAndCamera();
-  }
-
-  Future<void> _initEmbeddingAndCamera() async {
-    await _embeddingService.initialize();
-    _initCamera();
+    _embeddingService.initialize(); // Load model in background
+    _initCamera(); // Start camera immediately
     _loadReferenceImage();
   }
 
