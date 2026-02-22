@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 enum ValidationError {
   noFace,
   multipleFaces,
@@ -19,6 +21,7 @@ class FaceValidationResult {
   final double? headEulerY;
   final double? headEulerZ;
   final List<double>? embedding;
+  final Rect? boundingBox;
 
   FaceValidationResult({
     required this.isValid,
@@ -29,6 +32,7 @@ class FaceValidationResult {
     this.headEulerY,
     this.headEulerZ,
     this.embedding,
+    this.boundingBox,
   });
 
   factory FaceValidationResult.invalid(String message, ValidationError error) {

@@ -8,6 +8,7 @@ import '../models/verify_result.dart';
 import '../models/face_verify_error.dart';
 import '../models/face_validation_result.dart';
 import '../services/face_detection_service.dart';
+import '../services/face_embedding_service.dart';
 import '../services/face_matcher_service.dart';
 import '../services/liveness_service.dart';
 import '../services/base64_service.dart';
@@ -34,6 +35,7 @@ class LibVerifyScreen extends StatefulWidget {
 class _LibVerifyScreenState extends State<LibVerifyScreen> {
   CameraController? _cameraController;
   final FaceDetectionService _faceDetectionService = FaceDetectionService();
+  final FaceEmbeddingService _embeddingService = FaceEmbeddingService();
   final FaceMatcherService _matcherService = FaceMatcherService();
   late final LivenessService _livenessService;
 
@@ -51,6 +53,11 @@ class _LibVerifyScreenState extends State<LibVerifyScreen> {
   void initState() {
     super.initState();
     _livenessService = LivenessService();
+    _initEmbeddingAndCamera();
+  }
+
+  Future<void> _initEmbeddingAndCamera() async {
+    await _embeddingService.initialize();
     _initCamera();
     _loadReferenceImage();
   }
@@ -60,10 +67,13 @@ class _LibVerifyScreenState extends State<LibVerifyScreen> {
       final tempPath =
           await Base64Service.base64ToTempFile(widget.referenceImageBase64);
       final result = await _faceDetectionService.validateFace(tempPath);
-      await Base64Service.cleanupTempFile(tempPath);
 
-      if (result.isValid && result.embedding != null) {
-        _referenceEmbedding = result.embedding;
+      if (result.isValid && result.boundingBox != null) {
+        _referenceEmbedding = await _embeddingService.getEmbedding(
+          tempPath,
+          result.boundingBox!,
+        );
+        await Base64Service.cleanupTempFile(tempPath);
       } else {
         if (!mounted) return;
         final txnId = TransactionService.generateTransactionId();
@@ -190,10 +200,16 @@ class _LibVerifyScreenState extends State<LibVerifyScreen> {
         return;
       }
 
+      // Generate real embedding using TFLite MobileFaceNet model
+      final newEmbedding = await _embeddingService.getEmbedding(
+        image.path,
+        validation.boundingBox!,
+      );
+
       // Compare embeddings
       final matchResult = _matcherService.compareFaces(
         _referenceEmbedding!,
-        validation.embedding ?? [],
+        newEmbedding,
       );
 
       final txnId = TransactionService.generateTransactionId();
@@ -234,6 +250,7 @@ class _LibVerifyScreenState extends State<LibVerifyScreen> {
   void dispose() {
     _cameraController?.dispose();
     _faceDetectionService.dispose();
+    _embeddingService.dispose();
     _livenessService.dispose();
     _livenessTimer?.cancel();
     super.dispose();
