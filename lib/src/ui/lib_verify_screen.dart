@@ -45,6 +45,7 @@ class _LibVerifyScreenState extends State<LibVerifyScreen> {
   bool _isProcessing = false;
   bool _isCaptured = false;
   bool _livenessCompleted = false;
+  bool _cameraReady = false;
   Timer? _livenessTimer;
 
   List<double>? _referenceEmbedding;
@@ -137,6 +138,7 @@ class _LibVerifyScreenState extends State<LibVerifyScreen> {
       _startLivenessTimer();
     } else {
       _livenessCompleted = true;
+      _cameraReady = true;
     }
 
     setState(() {
@@ -153,12 +155,18 @@ class _LibVerifyScreenState extends State<LibVerifyScreen> {
       final blinkDetected =
           await _livenessService.processFrame(image, rotation);
       if (blinkDetected && mounted) {
+        _livenessTimer?.cancel();
+        try {
+          await _cameraController?.stopImageStream();
+        } catch (_) {}
+        // Small delay to let camera stabilize after stopping stream
+        await Future.delayed(const Duration(milliseconds: 300));
+        if (!mounted) return;
         setState(() {
           _livenessCompleted = true;
+          _cameraReady = true;
           _statusMessage = 'Liveness confirmed! Press verify button';
         });
-        _cameraController?.stopImageStream();
-        _livenessTimer?.cancel();
       }
     });
   }
@@ -180,9 +188,15 @@ class _LibVerifyScreenState extends State<LibVerifyScreen> {
   }
 
   Future<void> _captureAndVerify() async {
-    if (_isProcessing || _isCaptured || _referenceEmbedding == null) return;
+    if (_isProcessing ||
+        _isCaptured ||
+        _referenceEmbedding == null ||
+        !_cameraReady) {
+      return;
+    }
     setState(() {
       _isProcessing = true;
+      _currentError = ValidationError.none;
       _statusMessage = 'Verifying...';
     });
 
@@ -239,9 +253,19 @@ class _LibVerifyScreenState extends State<LibVerifyScreen> {
         ),
       );
     } catch (e) {
+      debugPrint('TrustCore verify error: $e');
+      if (!mounted) return;
       setState(() {
         _isProcessing = false;
-        _statusMessage = 'Error: ${e.toString()}';
+        _isValid = false;
+        _currentError = ValidationError.noFace;
+        _statusMessage = 'Something went wrong. Please try again.';
+      });
+      await Future.delayed(const Duration(seconds: 2));
+      if (!mounted) return;
+      setState(() {
+        _currentError = ValidationError.none;
+        _isCaptured = false;
       });
     }
   }
@@ -364,7 +388,10 @@ class _LibVerifyScreenState extends State<LibVerifyScreen> {
               ),
 
             // Manual capture/verify button
-            if (_livenessCompleted && !_isCaptured && !_isProcessing)
+            if (_livenessCompleted &&
+                _cameraReady &&
+                !_isCaptured &&
+                !_isProcessing)
               Positioned(
                 bottom: 40,
                 left: 0,

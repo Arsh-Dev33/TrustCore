@@ -45,13 +45,18 @@ class _SignupScreenState extends State<SignupScreen> {
   bool _isProcessing = false;
   bool _isCaptured = false;
   bool _livenessCompleted = false;
+  bool _cameraReady = false;
   Timer? _livenessTimer;
 
   @override
   void initState() {
     super.initState();
     _livenessService = LivenessService();
-    _embeddingService.initialize();
+    _initAll();
+  }
+
+  Future<void> _initAll() async {
+    await _embeddingService.initialize();
     _initCamera();
   }
 
@@ -92,6 +97,7 @@ class _SignupScreenState extends State<SignupScreen> {
       _startLivenessTimer();
     } else {
       _livenessCompleted = true;
+      _cameraReady = true;
     }
 
     setState(() {
@@ -108,13 +114,19 @@ class _SignupScreenState extends State<SignupScreen> {
       final blinkDetected =
           await _livenessService.processFrame(image, rotation);
       if (blinkDetected && mounted) {
+        _livenessTimer?.cancel();
+        try {
+          await _cameraController?.stopImageStream();
+        } catch (_) {}
+        // Small delay to let camera stabilize after stopping stream
+        await Future.delayed(const Duration(milliseconds: 300));
+        if (!mounted) return;
         setState(() {
           _livenessCompleted = true;
+          _cameraReady = true;
           _statusMessage =
               'Liveness confirmed! Press capture button to register';
         });
-        _cameraController?.stopImageStream();
-        _livenessTimer?.cancel();
       }
     });
   }
@@ -136,9 +148,10 @@ class _SignupScreenState extends State<SignupScreen> {
   }
 
   Future<void> _captureAndValidate() async {
-    if (_isProcessing || _isCaptured) return;
+    if (_isProcessing || _isCaptured || !_cameraReady) return;
     setState(() {
       _isProcessing = true;
+      _currentError = ValidationError.none;
       _statusMessage = 'Processing...';
     });
 
@@ -196,9 +209,20 @@ class _SignupScreenState extends State<SignupScreen> {
         ),
       );
     } catch (e) {
+      debugPrint('TrustCore signup error: $e');
+      if (!mounted) return;
       setState(() {
         _isProcessing = false;
-        _statusMessage = 'Error: ${e.toString()}';
+        _isValid = false;
+        _currentError = ValidationError.noFace;
+        _statusMessage = 'Something went wrong. Please try again.';
+      });
+      // Reset so user can retry
+      await Future.delayed(const Duration(seconds: 2));
+      if (!mounted) return;
+      setState(() {
+        _currentError = ValidationError.none;
+        _isCaptured = false;
       });
     }
   }
@@ -321,7 +345,10 @@ class _SignupScreenState extends State<SignupScreen> {
               ),
 
             // Manual capture button (always visible if liveness is done/disabled)
-            if (_livenessCompleted && !_isCaptured && !_isProcessing)
+            if (_livenessCompleted &&
+                _cameraReady &&
+                !_isCaptured &&
+                !_isProcessing)
               Positioned(
                 bottom: 40,
                 left: 0,
