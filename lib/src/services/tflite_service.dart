@@ -88,13 +88,23 @@ class TFLiteService {
 
       // output[0][0] = class 0 (e.g. no_mask / no_glasses)
       // output[0][1] = class 1 (e.g. mask / glasses)
-      final detectedConfidence = output[0][1]; // probability of mask/glasses
+      final class0Confidence = output[0][0]; // no_mask / no_glasses
+      final class1Confidence = output[0][1]; // mask / glasses
+
+      // Debug: print model output to help diagnose detection issues
+      print(
+          '[TFLite] class0=$class0Confidence, class1=$class1Confidence, path=$imagePath');
+
+      // Use class with higher probability
+      final detected =
+          class1Confidence > class0Confidence && class1Confidence > 0.5;
 
       return TFLiteClassifierResult(
-        detected: detectedConfidence > 0.75, // 75% threshold
-        confidence: detectedConfidence,
+        detected: detected,
+        confidence: class1Confidence,
       );
     } catch (e) {
+      print('[TFLite] Error: $e');
       return TFLiteClassifierResult(detected: false, confidence: 0.0);
     }
   }

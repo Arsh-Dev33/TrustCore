@@ -229,8 +229,11 @@ class _TrustCoreCameraState extends State<TrustCoreCamera>
       await _cameraController!.stopImageStream();
       final xFile = await _cameraController!.takePicture();
 
+      // Run MLKit on the captured still image to get correct faceRect
+      final stillResult = await _mlKitService.validateStillImage(xFile.path);
+      final faceRect = stillResult.faceFound ? stillResult.faceRect : null;
+
       // Run mask detection
-      final faceRect = _mlKitService.lastResult?.faceRect;
       final maskResult =
           await _tfliteService.detectMask(xFile.path, faceRect: faceRect);
 
