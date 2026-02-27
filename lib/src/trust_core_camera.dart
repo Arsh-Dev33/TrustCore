@@ -106,17 +106,24 @@ class _TrustCoreCameraState extends State<TrustCoreCamera>
   void _onCameraFrame(CameraImage image) async {
     if (_isCapturing || _isProcessing) return;
 
-    // Liveness check
-    await _livenessService.processFrame(
-      image,
-      InputImageRotation.rotation270deg,
-    );
+    // Liveness check (only if not passed)
+    if (_livenessStatus != CheckStatus.pass) {
+      await _livenessService.processFrame(
+        image,
+        InputImageRotation.rotation270deg,
+      );
+    }
 
-    // ML Kit face checks
-    final result = await _mlKitService.processFrame(
-      image,
-      InputImageRotation.rotation270deg,
-    );
+    // ML Kit face checks (only if not all current checks passed)
+    FrameCheckResult? result;
+    if (_singleFaceStatus != CheckStatus.pass ||
+        _eyesOpenStatus != CheckStatus.pass ||
+        _faceCoveredStatus != CheckStatus.pass) {
+      result = await _mlKitService.processFrame(
+        image,
+        InputImageRotation.rotation270deg,
+      );
+    }
 
     if (!mounted) return;
 
@@ -128,47 +135,55 @@ class _TrustCoreCameraState extends State<TrustCoreCamera>
 
   void _updateCheckStatuses(FrameCheckResult? result) {
     // Liveness
-    if (_livenessService.blinkDetected) {
-      _livenessStatus = CheckStatus.pass;
-      _livenessMessage = null;
-    } else {
-      _livenessStatus = CheckStatus.fail;
-      _livenessMessage = "Please blink to confirm liveness";
+    if (_livenessStatus != CheckStatus.pass) {
+      if (_livenessService.blinkDetected) {
+        _livenessStatus = CheckStatus.pass;
+        _livenessMessage = null;
+      } else {
+        _livenessStatus = CheckStatus.fail;
+        _livenessMessage = "Please blink to confirm liveness";
+      }
     }
 
     if (result == null) return;
 
     // Single face
-    if (!result.faceFound) {
-      _singleFaceStatus = CheckStatus.pending;
-      _singleFaceMessage = "No face detected";
-      _mainMessage = "Position your face in the oval";
-    } else if (result.multipleFaces) {
-      _singleFaceStatus = CheckStatus.fail;
-      _singleFaceMessage = "Multiple faces detected — only 1 person allowed";
-      _mainMessage = "Only one person allowed";
-    } else {
-      _singleFaceStatus = CheckStatus.pass;
-      _singleFaceMessage = null;
+    if (_singleFaceStatus != CheckStatus.pass) {
+      if (!result.faceFound) {
+        _singleFaceStatus = CheckStatus.pending;
+        _singleFaceMessage = "No face detected";
+        _mainMessage = "Position your face in the oval";
+      } else if (result.multipleFaces) {
+        _singleFaceStatus = CheckStatus.fail;
+        _singleFaceMessage = "Multiple faces detected — only 1 person allowed";
+        _mainMessage = "Only one person allowed";
+      } else {
+        _singleFaceStatus = CheckStatus.pass;
+        _singleFaceMessage = null;
+      }
     }
 
-    // Eyes open
+    // Eyes open and face forward
     if (result.faceFound && !result.multipleFaces) {
-      if (result.eyesOpen) {
-        _eyesOpenStatus = CheckStatus.pass;
-        _eyesMessage = null;
-      } else {
-        _eyesOpenStatus = CheckStatus.fail;
-        _eyesMessage = "Please keep both eyes open";
+      if (_eyesOpenStatus != CheckStatus.pass) {
+        if (result.eyesOpen) {
+          _eyesOpenStatus = CheckStatus.pass;
+          _eyesMessage = null;
+        } else {
+          _eyesOpenStatus = CheckStatus.fail;
+          _eyesMessage = "Please keep both eyes open";
+        }
       }
 
       // Face covered
-      if (result.faceCovered) {
-        _faceCoveredStatus = CheckStatus.fail;
-        _faceCoveredMessage = "Face is partially covered";
-      } else {
-        _faceCoveredStatus = CheckStatus.pass;
-        _faceCoveredMessage = null;
+      if (_faceCoveredStatus != CheckStatus.pass) {
+        if (result.faceCovered) {
+          _faceCoveredStatus = CheckStatus.fail;
+          _faceCoveredMessage = "Face is partially covered";
+        } else {
+          _faceCoveredStatus = CheckStatus.pass;
+          _faceCoveredMessage = null;
+        }
       }
 
       // Face forward
@@ -253,7 +268,8 @@ class _TrustCoreCameraState extends State<TrustCoreCamera>
           _mainMessage = "Checking for mask...";
         });
 
-        final maskResult = await _tfliteService.detectMask(image.path);
+        final maskResult = await _tfliteService.detectMask(image.path,
+            faceRect: faceResult.faceRect);
         setState(() => _maskStatus =
             maskResult.detected ? CheckStatus.fail : CheckStatus.pass);
 
@@ -263,7 +279,8 @@ class _TrustCoreCameraState extends State<TrustCoreCamera>
         }
 
         setState(() => _mainMessage = "Checking for spectacles...");
-        final glassesResult = await _tfliteService.detectGlasses(image.path);
+        final glassesResult = await _tfliteService.detectGlasses(image.path,
+            faceRect: faceResult.faceRect);
         setState(() => _glassesStatus =
             glassesResult.detected ? CheckStatus.fail : CheckStatus.pass);
 

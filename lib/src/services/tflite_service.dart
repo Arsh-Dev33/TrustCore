@@ -1,6 +1,7 @@
 import 'package:tflite_flutter/tflite_flutter.dart';
 import 'package:image/image.dart' as img;
 import 'dart:io';
+import 'dart:ui';
 
 enum TFLiteLabel { positive, negative }
 
@@ -35,19 +36,22 @@ class TFLiteService {
   bool get modelsLoaded => _modelsLoaded;
 
   /// Detect if mask is present on face
-  Future<TFLiteClassifierResult> detectMask(String imagePath) async {
-    return _runClassifier(_maskInterpreter, imagePath);
+  Future<TFLiteClassifierResult> detectMask(String imagePath,
+      {Rect? faceRect}) async {
+    return _runClassifier(_maskInterpreter, imagePath, faceRect: faceRect);
   }
 
   /// Detect if glasses/spectacles are present
-  Future<TFLiteClassifierResult> detectGlasses(String imagePath) async {
-    return _runClassifier(_glassesInterpreter, imagePath);
+  Future<TFLiteClassifierResult> detectGlasses(String imagePath,
+      {Rect? faceRect}) async {
+    return _runClassifier(_glassesInterpreter, imagePath, faceRect: faceRect);
   }
 
   Future<TFLiteClassifierResult> _runClassifier(
     Interpreter? interpreter,
-    String imagePath,
-  ) async {
+    String imagePath, {
+    Rect? faceRect,
+  }) async {
     if (interpreter == null) {
       return TFLiteClassifierResult(detected: false, confidence: 0.0);
     }
@@ -58,6 +62,17 @@ class TFLiteService {
       var image = img.decodeImage(bytes);
       if (image == null) {
         return TFLiteClassifierResult(detected: false, confidence: 0.0);
+      }
+
+      // Crop to face if provided
+      if (faceRect != null) {
+        image = img.copyCrop(
+          image,
+          x: faceRect.left.toInt(),
+          y: faceRect.top.toInt(),
+          width: faceRect.width.toInt(),
+          height: faceRect.height.toInt(),
+        );
       }
 
       // Resize to 224x224 (MobileNet standard input size)

@@ -12,18 +12,23 @@ class FaceOvalPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     // Dim overlay
-    final overlayPaint = Paint()
-      ..color = Colors.black.withAlpha(140); // 0.55 * 255
-    canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), overlayPaint);
-
     final ovalRect = Rect.fromCenter(
       center: Offset(size.width / 2, size.height * 0.42),
       width: size.width * 0.68,
       height: size.height * 0.46,
     );
 
-    // Clear oval
-    canvas.drawOval(ovalRect, Paint()..blendMode = BlendMode.clear);
+    // Dim overlay with transparent oval hole
+    final backgroundPath = Path()
+      ..addRect(Rect.fromLTWH(0, 0, size.width, size.height))
+      ..addOval(ovalRect)
+      ..fillType = PathFillType.evenOdd;
+
+    final overlayPaint = Paint()
+      ..color = Colors.black.withAlpha(140) // 0.55 * 255
+      ..style = PaintingStyle.fill;
+
+    canvas.drawPath(backgroundPath, overlayPaint);
 
     // Border color
     final Color borderColor = isCapturing

@@ -15,6 +15,8 @@ class FrameCheckResult {
   final double leftEyeProb;
   final double rightEyeProb;
 
+  final Rect? faceRect;
+
   FrameCheckResult({
     required this.faceFound,
     required this.multipleFaces,
@@ -24,6 +26,7 @@ class FrameCheckResult {
     required this.faceCount,
     required this.leftEyeProb,
     required this.rightEyeProb,
+    this.faceRect,
   });
 
   /// All basic ML Kit checks pass
@@ -120,6 +123,7 @@ class MLKitFaceService {
         faceCount: 1,
         leftEyeProb: leftEye,
         rightEyeProb: rightEye,
+        faceRect: face.boundingBox,
       );
 
       return _lastResult;
@@ -177,6 +181,7 @@ class MLKitFaceService {
       faceCount: 1,
       leftEyeProb: leftEye,
       rightEyeProb: rightEye,
+      faceRect: face.boundingBox,
     );
   }
 
