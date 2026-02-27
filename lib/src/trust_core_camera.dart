@@ -273,7 +273,7 @@ class _TrustCoreCameraState extends State<TrustCoreCamera>
           _glassesStatus =
               glassesResult.detected ? CheckStatus.fail : CheckStatus.pass;
           _glassesMessage =
-              glassesResult.detected ? "Please remove your spectacles" : null;
+              glassesResult.detected ? "Please remove your glasses" : null;
         });
 
         if (maskResult.detected) {
@@ -281,7 +281,7 @@ class _TrustCoreCameraState extends State<TrustCoreCamera>
           return;
         }
         if (glassesResult.detected) {
-          _showRetry("Please remove your spectacles or eyewear.");
+          _showRetry("Please remove your glasses or sunglasses.");
           return;
         }
       } else {
@@ -360,7 +360,7 @@ class _TrustCoreCameraState extends State<TrustCoreCamera>
           failMessage: _maskMessage,
         ),
         CheckItem(
-          label: "No spectacles",
+          label: "No glasses",
           status: _glassesStatus,
           failMessage: _glassesMessage,
         ),
