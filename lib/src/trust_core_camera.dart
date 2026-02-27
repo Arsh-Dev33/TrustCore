@@ -134,15 +134,16 @@ class _TrustCoreCameraState extends State<TrustCoreCamera>
   }
 
   void _updateCheckStatuses(FrameCheckResult? result) {
-    // Liveness
+    // Liveness — only prompt for blink when face is clearly visible and uncovered
     if (_livenessStatus != CheckStatus.pass) {
       if (_livenessService.blinkDetected) {
         _livenessStatus = CheckStatus.pass;
         _livenessMessage = null;
-      } else {
+      } else if (result != null && result.faceFound && !result.faceCovered) {
         _livenessStatus = CheckStatus.fail;
         _livenessMessage = "Please blink to confirm liveness";
       }
+      // else: stays pending while face isn't visible or is covered
     }
 
     if (result == null) return;
@@ -298,13 +299,7 @@ class _TrustCoreCameraState extends State<TrustCoreCamera>
   }
 
   Future<void> _captureAndProcess() async {
-    if (_isCapturing) return;
-
-    if (!_livenessService.blinkDetected) {
-      setState(
-          () => _mainMessage = "Please blink first to confirm you are live");
-      return;
-    }
+    if (_isCapturing || !_allChecksPassed) return;
 
     setState(() {
       _isCapturing = true;
@@ -315,76 +310,12 @@ class _TrustCoreCameraState extends State<TrustCoreCamera>
       await _cameraController!.stopImageStream();
       final image = await _cameraController!.takePicture();
 
-      // Run full validation on still image
-      setState(() => _mainMessage = "Validating face...");
-      final faceResult = await _mlKitService.validateStillImage(image.path);
-
-      if (!faceResult.faceFound) {
-        _showRetry("No face detected. Please try again.");
-        return;
-      }
-
-      if (faceResult.multipleFaces) {
-        _showRetry("Multiple faces detected. Only one person allowed.");
-        return;
-      }
-
-      if (!faceResult.eyesOpen) {
-        _showRetry("Please keep your eyes open.");
-        return;
-      }
-
-      if (faceResult.faceCovered) {
-        _showRetry("Your face appears to be partially covered.");
-        return;
-      }
-
-      if (!faceResult.faceForward) {
-        _showRetry("Please look directly at the camera.");
-        return;
-      }
-
-      // Run TFLite checks
-      if (_tfliteModelsLoaded) {
-        setState(() {
-          _maskStatus = CheckStatus.loading;
-          _glassesStatus = CheckStatus.loading;
-          _mainMessage = "Checking for mask...";
-        });
-
-        final maskResult = await _tfliteService.detectMask(image.path,
-            faceRect: faceResult.faceRect);
-        setState(() => _maskStatus =
-            maskResult.detected ? CheckStatus.fail : CheckStatus.pass);
-
-        if (maskResult.detected) {
-          _showRetry("Please remove your mask or face covering.");
-          return;
-        }
-
-        setState(() => _mainMessage = "Checking for spectacles...");
-        final glassesResult = await _tfliteService.detectGlasses(image.path,
-            faceRect: faceResult.faceRect);
-        setState(() => _glassesStatus =
-            glassesResult.detected ? CheckStatus.fail : CheckStatus.pass);
-
-        if (glassesResult.detected) {
-          _showRetry("Please remove your spectacles or eyewear.");
-          return;
-        }
-      }
-
-      // All passed — get location + encode image
       setState(() => _mainMessage = "Getting location...");
-
       final position = await LocationService.getCurrentPosition();
 
-      setState(() => _mainMessage = "Processing image...");
-
-      // Convert image to base64
+      setState(() => _mainMessage = "Processing...");
       final imageBytes = await File(image.path).readAsBytes();
 
-      // Optionally compress image before base64
       var decoded = img.decodeImage(imageBytes);
       if (decoded != null) {
         decoded = img.copyResize(decoded, width: 800);
@@ -403,7 +334,7 @@ class _TrustCoreCameraState extends State<TrustCoreCamera>
         }
       }
     } catch (e) {
-      _showRetry("Something went wrong. Please try again.\n${e.toString()}");
+      _showRetry("Something went wrong. Please try again.");
     }
   }
 
