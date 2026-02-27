@@ -22,52 +22,49 @@ class ExampleHome extends StatefulWidget {
 }
 
 class _ExampleHomeState extends State<ExampleHome> {
-  final _tc = TrustCore();
-  String _result = 'Tap a button to start';
-  String? _storedBase64;
-
-  Future<void> _signup() async {
-    final r = await _tc.signup(context: context, userId: 'demo_user');
-    setState(() {
-      if (r.success) {
-        _storedBase64 = r.imageBase64;
-        _result = '✅ Signup OK | txn: ${r.transactionId}';
-      } else {
-        _result = '❌ ${r.error} | ${r.message}';
-      }
-    });
-  }
+  String _result = 'Tap to verify face';
 
   Future<void> _verify() async {
-    final r = await _tc.verify(
-      context: context,
-      userId: 'demo_user',
-      referenceImageBase64: _storedBase64!,
-    );
-    setState(() {
-      _result = r.passed
-          ? '✅ ${r.matchPercent.toStringAsFixed(1)}% ${r.verdict} | txn: ${r.transactionId}'
-          : '❌ ${r.matchPercent.toStringAsFixed(1)}% ${r.verdict} | ${r.error}';
-    });
+    final result = await TrustCore.capture(context);
+
+    if (result != null) {
+      setState(() {
+        _result =
+            '✅ Success!\n\n'
+            'Lat: ${result.latitude}\n'
+            'Lng: ${result.longitude}\n'
+            'Captured at: ${result.capturedAt}\n'
+            'Base64 chars: ${result.base64Image.length}';
+      });
+    } else {
+      setState(() {
+        _result = '❌ User cancelled or verification failed';
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('TrustCore Example')),
-      body: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          children: [
-            Text(_result, style: const TextStyle(fontSize: 16)),
-            const SizedBox(height: 30),
-            ElevatedButton(onPressed: _signup, child: const Text('Signup')),
-            const SizedBox(height: 12),
-            ElevatedButton(
-              onPressed: _storedBase64 != null ? _verify : null,
-              child: const Text('Verify'),
-            ),
-          ],
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                _result,
+                style: const TextStyle(fontSize: 16),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 30),
+              ElevatedButton(
+                onPressed: _verify,
+                child: const Text('Verify Face'),
+              ),
+            ],
+          ),
         ),
       ),
     );

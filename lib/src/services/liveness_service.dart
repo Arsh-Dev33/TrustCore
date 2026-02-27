@@ -1,14 +1,15 @@
-import 'dart:typed_data';
-import 'dart:ui';
-import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:camera/camera.dart';
+import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 
 class LivenessService {
   final FaceDetector _detector;
+
+  double _prevLeftEye = 1.0;
+  double _prevRightEye = 1.0;
   bool _blinkDetected = false;
-  double _previousLeftEye = 1.0;
-  double _previousRightEye = 1.0;
-  int _frameCount = 0;
+  int _frameSkip = 0;
 
   LivenessService()
       : _detector = FaceDetector(
@@ -18,59 +19,64 @@ class LivenessService {
           ),
         );
 
-  Future<bool> processFrame(
-    CameraImage cameraImage,
+  bool get blinkDetected => _blinkDetected;
+
+  /// Process each camera frame for blink detection
+  Future<void> processFrame(
+    CameraImage image,
     InputImageRotation rotation,
   ) async {
-    _frameCount++;
-    if (_frameCount % 3 != 0) {
-      return _blinkDetected;
-    }
-
-    final bytesBuilder = BytesBuilder();
-    for (final Plane plane in cameraImage.planes) {
-      bytesBuilder.add(plane.bytes);
-    }
-    final bytes = bytesBuilder.toBytes();
-
-    final inputImage = InputImage.fromBytes(
-      bytes: bytes,
-      metadata: InputImageMetadata(
-        size: Size(
-          cameraImage.width.toDouble(),
-          cameraImage.height.toDouble(),
-        ),
-        rotation: rotation,
-        format: InputImageFormat.nv21,
-        bytesPerRow: cameraImage.planes[0].bytesPerRow,
-      ),
-    );
+    // Process every 3rd frame for performance
+    _frameSkip++;
+    if (_frameSkip % 3 != 0) return;
 
     try {
+      final inputImage = _buildInputImage(image, rotation);
       final faces = await _detector.processImage(inputImage);
-      if (faces.isEmpty) return _blinkDetected;
+
+      if (faces.isEmpty) return;
+
       final face = faces.first;
       final leftEye = face.leftEyeOpenProbability ?? 1.0;
       final rightEye = face.rightEyeOpenProbability ?? 1.0;
-      if (_previousLeftEye > 0.75 && _previousRightEye > 0.75) {
-        if (leftEye < 0.3 && rightEye < 0.3) {
-          _blinkDetected = true;
-        }
+
+      // Blink = eyes were open (>0.8) → now closed (<0.3)
+      if (_prevLeftEye > 0.8 &&
+          _prevRightEye > 0.8 &&
+          leftEye < 0.3 &&
+          rightEye < 0.3) {
+        _blinkDetected = true;
       }
-      _previousLeftEye = leftEye;
-      _previousRightEye = rightEye;
+
+      _prevLeftEye = leftEye;
+      _prevRightEye = rightEye;
     } catch (_) {}
-    return _blinkDetected;
+  }
+
+  InputImage _buildInputImage(CameraImage image, InputImageRotation rotation) {
+    final WriteBuffer allBytes = WriteBuffer();
+    for (final Plane plane in image.planes) {
+      allBytes.putUint8List(plane.bytes);
+    }
+    final bytes = allBytes.done().buffer.asUint8List();
+
+    return InputImage.fromBytes(
+      bytes: bytes,
+      metadata: InputImageMetadata(
+        size: Size(image.width.toDouble(), image.height.toDouble()),
+        rotation: rotation,
+        format: InputImageFormat.nv21,
+        bytesPerRow: image.planes[0].bytesPerRow,
+      ),
+    );
   }
 
   void reset() {
     _blinkDetected = false;
-    _previousLeftEye = 1.0;
-    _previousRightEye = 1.0;
-    _frameCount = 0;
+    _prevLeftEye = 1.0;
+    _prevRightEye = 1.0;
+    _frameSkip = 0;
   }
 
-  void dispose() {
-    _detector.close();
-  }
+  void dispose() => _detector.close();
 }
