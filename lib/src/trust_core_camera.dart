@@ -35,7 +35,8 @@ class _TrustCoreCameraState extends State<TrustCoreCamera>
   // State
   bool _isCapturing = false;
   String _mainMessage = "Position your face in the oval";
-  String? _retryReason; // persists after a failed attempt until face is in position
+  String?
+      _retryReason; // persists after a failed attempt until face is in position
 
   // Check statuses
   CheckStatus _livenessStatus = CheckStatus.pending;
@@ -193,59 +194,9 @@ class _TrustCoreCameraState extends State<TrustCoreCamera>
 
       if (!mounted) return;
 
-      // Evaluate single face
-      if (!faceResult.faceFound) {
-        setState(() {
-          _singleFaceStatus = CheckStatus.fail;
-          _singleFaceMessage = "No face detected";
-        });
-        _showRetry("No face detected. Please try again.");
-        return;
-      }
-      if (faceResult.multipleFaces) {
-        setState(() {
-          _singleFaceStatus = CheckStatus.fail;
-          _singleFaceMessage = "Multiple faces detected";
-        });
-        _showRetry("Multiple faces detected. Only one person allowed.");
-        return;
-      }
-      setState(() {
-        _singleFaceStatus = CheckStatus.pass;
-        _singleFaceMessage = null;
-      });
-
-      // Evaluate eyes open
-      if (!faceResult.eyesOpen) {
-        setState(() {
-          _eyesOpenStatus = CheckStatus.fail;
-          _eyesMessage = "Please keep both eyes open";
-        });
-        _showRetry("Please keep your eyes open.");
-        return;
-      }
-      setState(() {
-        _eyesOpenStatus = CheckStatus.pass;
-        _eyesMessage = null;
-      });
-
-      // Evaluate face not covered
-      if (faceResult.faceCovered) {
-        setState(() {
-          _faceCoveredStatus = CheckStatus.fail;
-          _faceCoveredMessage = "Face is partially covered";
-        });
-        _showRetry("Your face appears to be partially covered.");
-        return;
-      }
-      setState(() {
-        _faceCoveredStatus = CheckStatus.pass;
-        _faceCoveredMessage = null;
-      });
-
       // Evaluate face forward
       if (!faceResult.faceForward) {
-        _showRetry("Please look directly at the camera.");
+        await _showRetry("Please look directly at the camera.");
         return;
       }
 
@@ -268,8 +219,7 @@ class _TrustCoreCameraState extends State<TrustCoreCamera>
         setState(() {
           _maskStatus =
               maskResult.detected ? CheckStatus.fail : CheckStatus.pass;
-          _maskMessage =
-              maskResult.detected ? "Please remove your mask" : null;
+          _maskMessage = maskResult.detected ? "Please remove your mask" : null;
           _glassesStatus =
               glassesResult.detected ? CheckStatus.fail : CheckStatus.pass;
           _glassesMessage =
@@ -277,11 +227,11 @@ class _TrustCoreCameraState extends State<TrustCoreCamera>
         });
 
         if (maskResult.detected) {
-          _showRetry("Please remove your mask or face covering.");
+          await _showRetry("Please remove your mask or face covering.");
           return;
         }
         if (glassesResult.detected) {
-          _showRetry("Please remove your glasses or sunglasses.");
+          await _showRetry("Please remove your glasses or sunglasses.");
           return;
         }
       } else {
@@ -314,14 +264,22 @@ class _TrustCoreCameraState extends State<TrustCoreCamera>
         if (mounted) Navigator.of(context).pop(result);
       }
     } catch (e) {
-      _showRetry("Something went wrong. Please try again.");
+      await _showRetry("Something went wrong. Please try again.");
     }
   }
 
-  void _showRetry(String message) {
+  Future<void> _showRetry(String message) async {
     setState(() {
       _retryReason = message;
       _mainMessage = message;
+    });
+
+    // Keep error message and red indicators visible for 3s
+    await Future.delayed(const Duration(seconds: 3));
+
+    if (!mounted) return;
+
+    setState(() {
       _isCapturing = false;
       // Reset all statuses so checks re-run from scratch
       _livenessStatus = CheckStatus.pending;
@@ -334,7 +292,9 @@ class _TrustCoreCameraState extends State<TrustCoreCamera>
     });
 
     // Restart stream
-    _cameraController!.startImageStream(_onCameraFrame);
+    try {
+      _cameraController!.startImageStream(_onCameraFrame);
+    } catch (_) {}
     _livenessService.reset();
   }
 
@@ -402,8 +362,7 @@ class _TrustCoreCameraState extends State<TrustCoreCamera>
           // Top bar: close + title
           SafeArea(
             child: Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               child: Row(
                 children: [
                   GestureDetector(
@@ -414,8 +373,7 @@ class _TrustCoreCameraState extends State<TrustCoreCamera>
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         color: Colors.black.withAlpha(110),
-                        border:
-                            Border.all(color: Colors.white24, width: 0.5),
+                        border: Border.all(color: Colors.white24, width: 0.5),
                       ),
                       child: const Icon(Icons.close,
                           color: Colors.white70, size: 18),
@@ -489,8 +447,8 @@ class _TrustCoreCameraState extends State<TrustCoreCamera>
                           boxShadow: _livenessStatus == CheckStatus.pass
                               ? [
                                   BoxShadow(
-                                    color: const Color(0xFF4ADE80)
-                                        .withAlpha(100),
+                                    color:
+                                        const Color(0xFF4ADE80).withAlpha(100),
                                     blurRadius: 18,
                                     spreadRadius: 2,
                                   ),
