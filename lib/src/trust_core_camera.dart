@@ -192,16 +192,95 @@ class _TrustCoreCameraState extends State<TrustCoreCamera>
       }
     }
 
-    // Mask and glasses are checked on capture (still image — more accurate)
-    // Show loading if face is valid and we're about to run them
-    if (_singleFaceStatus == CheckStatus.pass &&
-        _eyesOpenStatus == CheckStatus.pass) {
-      if (_maskStatus == CheckStatus.pending) {
-        _maskStatus = CheckStatus.loading;
+    // Trigger TFLite checks automatically when live checks pass
+    if (_tfliteModelsLoaded &&
+        _singleFaceStatus == CheckStatus.pass &&
+        _eyesOpenStatus == CheckStatus.pass &&
+        _faceCoveredStatus == CheckStatus.pass &&
+        _maskStatus != CheckStatus.pass &&
+        _maskStatus != CheckStatus.fail &&
+        _glassesStatus != CheckStatus.pass &&
+        _glassesStatus != CheckStatus.fail &&
+        !_isRunningTFLite) {
+      _maskStatus = CheckStatus.loading;
+      _glassesStatus = CheckStatus.loading;
+      // Schedule the TFLite check after this setState completes
+      Future.microtask(() => _runTFLiteChecks());
+    }
+
+    // If TFLite models not loaded, skip mask/glasses checks
+    if (!_tfliteModelsLoaded && _maskStatus == CheckStatus.pending) {
+      _maskStatus = CheckStatus.pass;
+      _maskMessage = null;
+      _glassesStatus = CheckStatus.pass;
+      _glassesMessage = null;
+    }
+  }
+
+  bool _isRunningTFLite = false;
+
+  /// Auto-run TFLite mask/glasses checks by taking a snapshot
+  Future<void> _runTFLiteChecks() async {
+    if (_isRunningTFLite || !_tfliteModelsLoaded) return;
+    _isRunningTFLite = true;
+
+    try {
+      // Stop stream to take a picture
+      await _cameraController!.stopImageStream();
+      final xFile = await _cameraController!.takePicture();
+
+      // Run mask detection
+      final faceRect = _mlKitService.lastResult?.faceRect;
+      final maskResult =
+          await _tfliteService.detectMask(xFile.path, faceRect: faceRect);
+
+      if (!mounted) return;
+
+      setState(() {
+        if (maskResult.detected) {
+          _maskStatus = CheckStatus.fail;
+          _maskMessage = "Please remove your mask or face covering";
+        } else {
+          _maskStatus = CheckStatus.pass;
+          _maskMessage = null;
+        }
+      });
+
+      // Run glasses detection
+      final glassesResult =
+          await _tfliteService.detectGlasses(xFile.path, faceRect: faceRect);
+
+      if (!mounted) return;
+
+      setState(() {
+        if (glassesResult.detected) {
+          _glassesStatus = CheckStatus.fail;
+          _glassesMessage = "Please remove your spectacles or eyewear";
+        } else {
+          _glassesStatus = CheckStatus.pass;
+          _glassesMessage = null;
+        }
+        _checkAllPassed();
+      });
+
+      // Restart stream
+      _cameraController!.startImageStream(_onCameraFrame);
+    } catch (e) {
+      // On failure, mark as pass to not block the user
+      if (mounted) {
+        setState(() {
+          _maskStatus = CheckStatus.pass;
+          _maskMessage = null;
+          _glassesStatus = CheckStatus.pass;
+          _glassesMessage = null;
+          _checkAllPassed();
+        });
       }
-      if (_glassesStatus == CheckStatus.pending) {
-        _glassesStatus = CheckStatus.loading;
-      }
+      try {
+        _cameraController!.startImageStream(_onCameraFrame);
+      } catch (_) {}
+    } finally {
+      _isRunningTFLite = false;
     }
   }
 
@@ -209,8 +288,9 @@ class _TrustCoreCameraState extends State<TrustCoreCamera>
     _allChecksPassed = _livenessStatus == CheckStatus.pass &&
         _singleFaceStatus == CheckStatus.pass &&
         _eyesOpenStatus == CheckStatus.pass &&
-        _faceCoveredStatus == CheckStatus.pass;
-    // Note: mask and glasses checked on actual capture
+        _faceCoveredStatus == CheckStatus.pass &&
+        _maskStatus == CheckStatus.pass &&
+        _glassesStatus == CheckStatus.pass;
   }
 
   Future<void> _captureAndProcess() async {
@@ -327,6 +407,15 @@ class _TrustCoreCameraState extends State<TrustCoreCamera>
     setState(() {
       _mainMessage = message;
       _isCapturing = false;
+      // Reset all statuses so checks re-run from scratch
+      _livenessStatus = CheckStatus.pending;
+      _singleFaceStatus = CheckStatus.pending;
+      _eyesOpenStatus = CheckStatus.pending;
+      _maskStatus = CheckStatus.pending;
+      _glassesStatus = CheckStatus.pending;
+      _faceCoveredStatus = CheckStatus.pending;
+      _allChecksPassed = false;
+      _isRunningTFLite = false;
     });
 
     // Restart stream
