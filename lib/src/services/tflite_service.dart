@@ -38,18 +38,21 @@ class TFLiteService {
   /// Detect if mask is present on face
   Future<TFLiteClassifierResult> detectMask(String imagePath,
       {Rect? faceRect}) async {
-    return _runClassifier(_maskInterpreter, imagePath, faceRect: faceRect);
+    return _runClassifier(_maskInterpreter, imagePath,
+        label: 'mask', faceRect: faceRect);
   }
 
   /// Detect if glasses/spectacles are present
   Future<TFLiteClassifierResult> detectGlasses(String imagePath,
       {Rect? faceRect}) async {
-    return _runClassifier(_glassesInterpreter, imagePath, faceRect: faceRect);
+    return _runClassifier(_glassesInterpreter, imagePath,
+        label: 'glasses', faceRect: faceRect);
   }
 
   Future<TFLiteClassifierResult> _runClassifier(
     Interpreter? interpreter,
     String imagePath, {
+    required String label,
     Rect? faceRect,
   }) async {
     if (interpreter == null) {
@@ -92,12 +95,10 @@ class TFLiteService {
       final class1Confidence = output[0][1]; // mask / glasses
 
       // Debug: print model output to help diagnose detection issues
-      print(
-          '[TFLite] class0=$class0Confidence, class1=$class1Confidence, path=$imagePath');
+      print('[TFLite] $label: class0=$class0Confidence, class1=$class1Confidence');
 
-      // Use class with higher probability
-      final detected =
-          class1Confidence > class0Confidence && class1Confidence > 0.5;
+      // Use class with higher probability (class1 = mask/glasses)
+      final detected = class1Confidence > class0Confidence;
 
       return TFLiteClassifierResult(
         detected: detected,

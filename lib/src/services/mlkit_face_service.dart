@@ -107,12 +107,11 @@ class MLKitFaceService {
       final eulerZ = face.headEulerAngleZ ?? 0.0;
 
       // Face covered check via mesh landmark count
+      // Face is only considered clear when mesh is positively detected with 350+ landmarks.
+      // If mesh returns empty (detection failure or face obscured), treat as covered.
       final meshes = await _meshDetector.processImage(inputImage);
-      bool faceCovered = false;
-      if (meshes.isNotEmpty) {
-        // 468 total landmarks — if less than 350 visible → face partially covered
-        faceCovered = meshes.first.points.length < 350;
-      }
+      final bool faceClear = meshes.isNotEmpty && meshes.first.points.length >= 350;
+      final bool faceCovered = !faceClear;
 
       _lastResult = FrameCheckResult(
         faceFound: true,
@@ -170,7 +169,8 @@ class MLKitFaceService {
     final eulerZ = face.headEulerAngleZ ?? 0.0;
 
     final meshes = await _meshDetector.processImage(inputImage);
-    final faceCovered = meshes.isNotEmpty && meshes.first.points.length < 350;
+    final bool faceClear = meshes.isNotEmpty && meshes.first.points.length >= 350;
+    final bool faceCovered = !faceClear;
 
     return FrameCheckResult(
       faceFound: true,

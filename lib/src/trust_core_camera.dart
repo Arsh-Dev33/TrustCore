@@ -192,8 +192,9 @@ class _TrustCoreCameraState extends State<TrustCoreCamera>
       }
     }
 
-    // Trigger TFLite checks automatically when live checks pass
+    // Trigger TFLite checks automatically when all live checks pass (including liveness)
     if (_tfliteModelsLoaded &&
+        _livenessStatus == CheckStatus.pass &&
         _singleFaceStatus == CheckStatus.pass &&
         _eyesOpenStatus == CheckStatus.pass &&
         _faceCoveredStatus == CheckStatus.pass &&
