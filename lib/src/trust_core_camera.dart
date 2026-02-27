@@ -33,9 +33,9 @@ class _TrustCoreCameraState extends State<TrustCoreCamera>
   late LivenessService _livenessService;
 
   // State
-  final bool _isProcessing = false;
   bool _isCapturing = false;
   String _mainMessage = "Position your face in the oval";
+  String? _retryReason; // persists after a failed attempt until face is in position
 
   // Check statuses
   CheckStatus _livenessStatus = CheckStatus.pending;
@@ -103,190 +103,66 @@ class _TrustCoreCameraState extends State<TrustCoreCamera>
     setState(() => _isCameraReady = true);
   }
 
+  // Live stream: only liveness + face guidance until blink is confirmed
   void _onCameraFrame(CameraImage image) async {
-    if (_isCapturing || _isProcessing) return;
+    if (_isCapturing || _livenessStatus == CheckStatus.pass) return;
 
-    // Liveness check (only if not passed)
-    if (_livenessStatus != CheckStatus.pass) {
-      await _livenessService.processFrame(
-        image,
-        InputImageRotation.rotation270deg,
-      );
-    }
+    await _livenessService.processFrame(
+      image,
+      InputImageRotation.rotation270deg,
+    );
 
-    // ML Kit face checks (only if not all current checks passed)
-    FrameCheckResult? result;
-    if (_singleFaceStatus != CheckStatus.pass ||
-        _eyesOpenStatus != CheckStatus.pass ||
-        _faceCoveredStatus != CheckStatus.pass) {
-      result = await _mlKitService.processFrame(
-        image,
-        InputImageRotation.rotation270deg,
-      );
-    }
+    final result = await _mlKitService.processFrame(
+      image,
+      InputImageRotation.rotation270deg,
+    );
 
     if (!mounted) return;
 
-    setState(() {
-      _updateCheckStatuses(result);
-      _checkAllPassed();
-    });
+    setState(() => _updateLivenessGuidance(result));
   }
 
-  void _updateCheckStatuses(FrameCheckResult? result) {
-    // Liveness — only prompt for blink when face is clearly visible and uncovered
-    if (_livenessStatus != CheckStatus.pass) {
-      if (_livenessService.blinkDetected) {
-        _livenessStatus = CheckStatus.pass;
-        _livenessMessage = null;
-      } else if (result != null && result.faceFound && !result.faceCovered) {
-        _livenessStatus = CheckStatus.fail;
-        _livenessMessage = "Please blink to confirm liveness";
-      }
-      // else: stays pending while face isn't visible or is covered
+  void _updateLivenessGuidance(FrameCheckResult? result) {
+    if (_livenessService.blinkDetected) {
+      _livenessStatus = CheckStatus.pass;
+      _livenessMessage = null;
+      _retryReason = null;
+      _mainMessage = "Tap the button to capture";
+      return;
     }
 
-    if (result == null) return;
-
-    // Single face
-    if (_singleFaceStatus != CheckStatus.pass) {
-      if (!result.faceFound) {
-        _singleFaceStatus = CheckStatus.pending;
-        _singleFaceMessage = "No face detected";
-        _mainMessage = "Position your face in the oval";
-      } else if (result.multipleFaces) {
-        _singleFaceStatus = CheckStatus.fail;
-        _singleFaceMessage = "Multiple faces detected — only 1 person allowed";
-        _mainMessage = "Only one person allowed";
-      } else {
-        _singleFaceStatus = CheckStatus.pass;
-        _singleFaceMessage = null;
-      }
+    if (result == null || !result.faceFound) {
+      _livenessStatus = CheckStatus.pending;
+      // Keep showing the retry reason until face is in position
+      _mainMessage = _retryReason ?? "Position your face in the oval";
+      return;
     }
 
-    // Eyes open and face forward
-    if (result.faceFound && !result.multipleFaces) {
-      if (_eyesOpenStatus != CheckStatus.pass) {
-        if (result.eyesOpen) {
-          _eyesOpenStatus = CheckStatus.pass;
-          _eyesMessage = null;
-        } else {
-          _eyesOpenStatus = CheckStatus.fail;
-          _eyesMessage = "Please keep both eyes open";
-        }
-      }
-
-      // Face covered
-      if (_faceCoveredStatus != CheckStatus.pass) {
-        if (result.faceCovered) {
-          _faceCoveredStatus = CheckStatus.fail;
-          _faceCoveredMessage = "Face is partially covered";
-        } else {
-          _faceCoveredStatus = CheckStatus.pass;
-          _faceCoveredMessage = null;
-        }
-      }
-
-      // Face forward
-      if (!result.faceForward) {
-        _mainMessage = "Look directly at the camera";
-      }
+    if (result.multipleFaces) {
+      _livenessStatus = CheckStatus.pending;
+      _mainMessage = "Only one person allowed";
+      return;
     }
 
-    // Trigger TFLite checks automatically when all live checks pass (including liveness)
-    if (_tfliteModelsLoaded &&
-        _livenessStatus == CheckStatus.pass &&
-        _singleFaceStatus == CheckStatus.pass &&
-        _eyesOpenStatus == CheckStatus.pass &&
-        _faceCoveredStatus == CheckStatus.pass &&
-        _maskStatus != CheckStatus.pass &&
-        _maskStatus != CheckStatus.fail &&
-        _glassesStatus != CheckStatus.pass &&
-        _glassesStatus != CheckStatus.fail &&
-        !_isRunningTFLite) {
-      _maskStatus = CheckStatus.loading;
-      _glassesStatus = CheckStatus.loading;
-      // Schedule the TFLite check after this setState completes
-      Future.microtask(() => _runTFLiteChecks());
+    if (result.faceCovered) {
+      _livenessStatus = CheckStatus.pending;
+      _mainMessage = "Remove face covering to continue";
+      return;
     }
 
-    // If TFLite models not loaded, skip mask/glasses checks
-    if (!_tfliteModelsLoaded && _maskStatus == CheckStatus.pending) {
-      _maskStatus = CheckStatus.pass;
-      _maskMessage = null;
-      _glassesStatus = CheckStatus.pass;
-      _glassesMessage = null;
+    // Face is properly in frame — clear retry reason and show blink guidance
+    _retryReason = null;
+
+    if (!result.faceForward) {
+      _livenessStatus = CheckStatus.fail;
+      _livenessMessage = "Please blink to confirm liveness";
+      _mainMessage = "Look directly at the camera";
+      return;
     }
-  }
 
-  bool _isRunningTFLite = false;
-
-  /// Auto-run TFLite mask/glasses checks by taking a snapshot
-  Future<void> _runTFLiteChecks() async {
-    if (_isRunningTFLite || !_tfliteModelsLoaded) return;
-    _isRunningTFLite = true;
-
-    try {
-      // Stop stream to take a picture
-      await _cameraController!.stopImageStream();
-      final xFile = await _cameraController!.takePicture();
-
-      // Run MLKit on the captured still image to get correct faceRect
-      final stillResult = await _mlKitService.validateStillImage(xFile.path);
-      final faceRect = stillResult.faceFound ? stillResult.faceRect : null;
-
-      // Run mask detection
-      final maskResult =
-          await _tfliteService.detectMask(xFile.path, faceRect: faceRect);
-
-      if (!mounted) return;
-
-      setState(() {
-        if (maskResult.detected) {
-          _maskStatus = CheckStatus.fail;
-          _maskMessage = "Please remove your mask or face covering";
-        } else {
-          _maskStatus = CheckStatus.pass;
-          _maskMessage = null;
-        }
-      });
-
-      // Run glasses detection
-      final glassesResult =
-          await _tfliteService.detectGlasses(xFile.path, faceRect: faceRect);
-
-      if (!mounted) return;
-
-      setState(() {
-        if (glassesResult.detected) {
-          _glassesStatus = CheckStatus.fail;
-          _glassesMessage = "Please remove your spectacles or eyewear";
-        } else {
-          _glassesStatus = CheckStatus.pass;
-          _glassesMessage = null;
-        }
-        _checkAllPassed();
-      });
-
-      // Restart stream
-      _cameraController!.startImageStream(_onCameraFrame);
-    } catch (e) {
-      // On failure, mark as pass to not block the user
-      if (mounted) {
-        setState(() {
-          _maskStatus = CheckStatus.pass;
-          _maskMessage = null;
-          _glassesStatus = CheckStatus.pass;
-          _glassesMessage = null;
-          _checkAllPassed();
-        });
-      }
-      try {
-        _cameraController!.startImageStream(_onCameraFrame);
-      } catch (_) {}
-    } finally {
-      _isRunningTFLite = false;
-    }
+    _livenessStatus = CheckStatus.fail;
+    _livenessMessage = "Please blink to confirm liveness";
+    _mainMessage = "Please blink";
   }
 
   void _checkAllPassed() {
@@ -298,8 +174,9 @@ class _TrustCoreCameraState extends State<TrustCoreCamera>
         _glassesStatus == CheckStatus.pass;
   }
 
+  // On button tap: capture photo and run all remaining checks on the still image
   Future<void> _captureAndProcess() async {
-    if (_isCapturing || !_allChecksPassed) return;
+    if (_isCapturing || _livenessStatus != CheckStatus.pass) return;
 
     setState(() {
       _isCapturing = true;
@@ -310,12 +187,117 @@ class _TrustCoreCameraState extends State<TrustCoreCamera>
       await _cameraController!.stopImageStream();
       final image = await _cameraController!.takePicture();
 
+      // Run ML Kit on the still image
+      setState(() => _mainMessage = "Checking face...");
+      final faceResult = await _mlKitService.validateStillImage(image.path);
+
+      if (!mounted) return;
+
+      // Evaluate single face
+      if (!faceResult.faceFound) {
+        setState(() {
+          _singleFaceStatus = CheckStatus.fail;
+          _singleFaceMessage = "No face detected";
+        });
+        _showRetry("No face detected. Please try again.");
+        return;
+      }
+      if (faceResult.multipleFaces) {
+        setState(() {
+          _singleFaceStatus = CheckStatus.fail;
+          _singleFaceMessage = "Multiple faces detected";
+        });
+        _showRetry("Multiple faces detected. Only one person allowed.");
+        return;
+      }
+      setState(() {
+        _singleFaceStatus = CheckStatus.pass;
+        _singleFaceMessage = null;
+      });
+
+      // Evaluate eyes open
+      if (!faceResult.eyesOpen) {
+        setState(() {
+          _eyesOpenStatus = CheckStatus.fail;
+          _eyesMessage = "Please keep both eyes open";
+        });
+        _showRetry("Please keep your eyes open.");
+        return;
+      }
+      setState(() {
+        _eyesOpenStatus = CheckStatus.pass;
+        _eyesMessage = null;
+      });
+
+      // Evaluate face not covered
+      if (faceResult.faceCovered) {
+        setState(() {
+          _faceCoveredStatus = CheckStatus.fail;
+          _faceCoveredMessage = "Face is partially covered";
+        });
+        _showRetry("Your face appears to be partially covered.");
+        return;
+      }
+      setState(() {
+        _faceCoveredStatus = CheckStatus.pass;
+        _faceCoveredMessage = null;
+      });
+
+      // Evaluate face forward
+      if (!faceResult.faceForward) {
+        _showRetry("Please look directly at the camera.");
+        return;
+      }
+
+      // Run TFLite mask + glasses checks
+      if (_tfliteModelsLoaded) {
+        setState(() {
+          _maskStatus = CheckStatus.loading;
+          _glassesStatus = CheckStatus.loading;
+          _mainMessage = "Checking for mask & glasses...";
+        });
+
+        final faceRect = faceResult.faceRect;
+        final maskResult =
+            await _tfliteService.detectMask(image.path, faceRect: faceRect);
+        final glassesResult =
+            await _tfliteService.detectGlasses(image.path, faceRect: faceRect);
+
+        if (!mounted) return;
+
+        setState(() {
+          _maskStatus =
+              maskResult.detected ? CheckStatus.fail : CheckStatus.pass;
+          _maskMessage =
+              maskResult.detected ? "Please remove your mask" : null;
+          _glassesStatus =
+              glassesResult.detected ? CheckStatus.fail : CheckStatus.pass;
+          _glassesMessage =
+              glassesResult.detected ? "Please remove your spectacles" : null;
+        });
+
+        if (maskResult.detected) {
+          _showRetry("Please remove your mask or face covering.");
+          return;
+        }
+        if (glassesResult.detected) {
+          _showRetry("Please remove your spectacles or eyewear.");
+          return;
+        }
+      } else {
+        setState(() {
+          _maskStatus = CheckStatus.pass;
+          _glassesStatus = CheckStatus.pass;
+        });
+      }
+
+      // All checks passed — get location and return result
+      _checkAllPassed();
       setState(() => _mainMessage = "Getting location...");
       final position = await LocationService.getCurrentPosition();
 
       setState(() => _mainMessage = "Processing...");
       final imageBytes = await File(image.path).readAsBytes();
-
       var decoded = img.decodeImage(imageBytes);
       if (decoded != null) {
         decoded = img.copyResize(decoded, width: 800);
@@ -329,9 +311,7 @@ class _TrustCoreCameraState extends State<TrustCoreCamera>
           capturedAt: DateTime.now(),
         );
 
-        if (mounted) {
-          Navigator.of(context).pop(result);
-        }
+        if (mounted) Navigator.of(context).pop(result);
       }
     } catch (e) {
       _showRetry("Something went wrong. Please try again.");
@@ -340,6 +320,7 @@ class _TrustCoreCameraState extends State<TrustCoreCamera>
 
   void _showRetry(String message) {
     setState(() {
+      _retryReason = message;
       _mainMessage = message;
       _isCapturing = false;
       // Reset all statuses so checks re-run from scratch
@@ -350,7 +331,6 @@ class _TrustCoreCameraState extends State<TrustCoreCamera>
       _glassesStatus = CheckStatus.pending;
       _faceCoveredStatus = CheckStatus.pending;
       _allChecksPassed = false;
-      _isRunningTFLite = false;
     });
 
     // Restart stream
@@ -497,16 +477,16 @@ class _TrustCoreCameraState extends State<TrustCoreCamera>
                         height: 62,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: _allChecksPassed
+                          color: _livenessStatus == CheckStatus.pass
                               ? Colors.white
                               : Colors.white.withAlpha(35),
                           border: Border.all(
-                            color: _allChecksPassed
+                            color: _livenessStatus == CheckStatus.pass
                                 ? const Color(0xFF4ADE80)
                                 : Colors.white24,
                             width: 2.0,
                           ),
-                          boxShadow: _allChecksPassed
+                          boxShadow: _livenessStatus == CheckStatus.pass
                               ? [
                                   BoxShadow(
                                     color: const Color(0xFF4ADE80)
@@ -529,9 +509,11 @@ class _TrustCoreCameraState extends State<TrustCoreCamera>
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      _allChecksPassed ? "TAP TO CAPTURE" : "COMPLETE CHECKS",
+                      _livenessStatus == CheckStatus.pass
+                          ? "TAP TO CAPTURE"
+                          : "BLINK TO UNLOCK",
                       style: TextStyle(
-                        color: _allChecksPassed
+                        color: _livenessStatus == CheckStatus.pass
                             ? Colors.white60
                             : Colors.white24,
                         fontSize: 10,
