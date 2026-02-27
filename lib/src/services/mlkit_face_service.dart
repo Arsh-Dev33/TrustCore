@@ -1,5 +1,4 @@
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
-import 'package:google_mlkit_face_mesh_detection/google_mlkit_face_mesh_detection.dart';
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -36,7 +35,6 @@ class FrameCheckResult {
 
 class MLKitFaceService {
   late final FaceDetector _faceDetector;
-  late final FaceMeshDetector _meshDetector;
   int _frameSkip = 0;
   FrameCheckResult? _lastResult;
 
@@ -50,13 +48,24 @@ class MLKitFaceService {
         minFaceSize: 0.15,
       ),
     );
-
-    _meshDetector = FaceMeshDetector(
-      option: FaceMeshDetectorOptions.faceMesh,
-    );
   }
 
   FrameCheckResult? get lastResult => _lastResult;
+
+  /// Checks if the lower face (nose + mouth) is obscured using ML Kit contours.
+  /// Returns true if neither the nose bottom nor lip contours are detectable.
+  bool _isFaceCovered(Face face) {
+    final noseBottom = face.contours[FaceContourType.noseBottom];
+    final upperLip   = face.contours[FaceContourType.upperLipTop];
+    final lowerLip   = face.contours[FaceContourType.lowerLipBottom];
+
+    final bool noseVisible = noseBottom != null && noseBottom.points.isNotEmpty;
+    final bool lipsVisible = (upperLip != null && upperLip.points.isNotEmpty) ||
+                             (lowerLip != null && lowerLip.points.isNotEmpty);
+
+    // Covered if neither nose nor lips are detectable
+    return !noseVisible && !lipsVisible;
+  }
 
   /// Run checks on live camera frame
   Future<FrameCheckResult?> processFrame(
@@ -101,17 +110,13 @@ class MLKitFaceService {
       }
 
       final face = faces.first;
-      final leftEye = face.leftEyeOpenProbability ?? 0.0;
+      final leftEye  = face.leftEyeOpenProbability ?? 0.0;
       final rightEye = face.rightEyeOpenProbability ?? 0.0;
-      final eulerY = face.headEulerAngleY ?? 0.0;
-      final eulerZ = face.headEulerAngleZ ?? 0.0;
+      final eulerY   = face.headEulerAngleY ?? 0.0;
+      final eulerZ   = face.headEulerAngleZ ?? 0.0;
 
-      // Face covered check via mesh landmark count
-      // Face is only considered clear when mesh is positively detected with 350+ landmarks.
-      // If mesh returns empty (detection failure or face obscured), treat as covered.
-      final meshes = await _meshDetector.processImage(inputImage);
-      final bool faceClear = meshes.isNotEmpty && meshes.first.points.length >= 350;
-      final bool faceCovered = !faceClear;
+      // Contour-based coverage: covered when nose/mouth contours are not detectable
+      final bool faceCovered = _isFaceCovered(face);
 
       _lastResult = FrameCheckResult(
         faceFound: true,
@@ -163,14 +168,12 @@ class MLKitFaceService {
     }
 
     final face = faces.first;
-    final leftEye = face.leftEyeOpenProbability ?? 0.0;
+    final leftEye  = face.leftEyeOpenProbability ?? 0.0;
     final rightEye = face.rightEyeOpenProbability ?? 0.0;
-    final eulerY = face.headEulerAngleY ?? 0.0;
-    final eulerZ = face.headEulerAngleZ ?? 0.0;
+    final eulerY   = face.headEulerAngleY ?? 0.0;
+    final eulerZ   = face.headEulerAngleZ ?? 0.0;
 
-    final meshes = await _meshDetector.processImage(inputImage);
-    final bool faceClear = meshes.isNotEmpty && meshes.first.points.length >= 350;
-    final bool faceCovered = !faceClear;
+    final bool faceCovered = _isFaceCovered(face);
 
     return FrameCheckResult(
       faceFound: true,
@@ -205,6 +208,5 @@ class MLKitFaceService {
 
   void dispose() {
     _faceDetector.close();
-    _meshDetector.close();
   }
 }

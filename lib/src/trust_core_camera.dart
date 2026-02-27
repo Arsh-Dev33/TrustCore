@@ -488,104 +488,124 @@ class _TrustCoreCameraState extends State<TrustCoreCamera>
             size: Size.infinite,
           ),
 
-          // Top: Close button
+          // Top bar: close + title
           SafeArea(
-            child: Align(
-              alignment: Alignment.topLeft,
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: GestureDetector(
-                  onTap: () => Navigator.of(context).pop(null),
-                  child: Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.black54,
-                      borderRadius: BorderRadius.circular(20),
+            child: Padding(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              child: Row(
+                children: [
+                  GestureDetector(
+                    onTap: () => Navigator.of(context).pop(null),
+                    child: Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.black.withAlpha(110),
+                        border:
+                            Border.all(color: Colors.white24, width: 0.5),
+                      ),
+                      child: const Icon(Icons.close,
+                          color: Colors.white70, size: 18),
                     ),
-                    child:
-                        const Icon(Icons.close, color: Colors.white, size: 22),
                   ),
-                ),
+                  const Expanded(
+                    child: Text(
+                      "FACE VERIFICATION",
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 2.2,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 36),
+                ],
               ),
             ),
           ),
 
-          // Bottom: Check list + capture button
+          // Bottom: guidance + checks + capture
           Positioned(
             left: 0,
             right: 0,
             bottom: 0,
             child: SafeArea(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 28),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // Main message
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 10),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withAlpha(178), // 0.7 * 255
-                        borderRadius: BorderRadius.circular(10),
+                    // Guidance message — floating, no box
+                    Text(
+                      _mainMessage,
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 13,
+                        shadows: [
+                          Shadow(color: Colors.black87, blurRadius: 10),
+                        ],
                       ),
-                      child: Text(
-                        _mainMessage,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 14,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
+                      textAlign: TextAlign.center,
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 14),
 
                     // Check indicators
                     CheckIndicatorPanel(checks: _checks),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 22),
 
                     // Capture button
                     GestureDetector(
                       onTap: _isCapturing ? null : _captureAndProcess,
-                      child: Container(
-                        width: 72,
-                        height: 72,
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 300),
+                        width: 62,
+                        height: 62,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color:
-                              _allChecksPassed ? Colors.white : Colors.white30,
+                          color: _allChecksPassed
+                              ? Colors.white
+                              : Colors.white.withAlpha(35),
                           border: Border.all(
                             color: _allChecksPassed
-                                ? Colors.green
-                                : Colors.white30,
-                            width: 4,
+                                ? const Color(0xFF4ADE80)
+                                : Colors.white24,
+                            width: 2.0,
                           ),
+                          boxShadow: _allChecksPassed
+                              ? [
+                                  BoxShadow(
+                                    color: const Color(0xFF4ADE80)
+                                        .withAlpha(100),
+                                    blurRadius: 18,
+                                    spreadRadius: 2,
+                                  ),
+                                ]
+                              : [],
                         ),
                         child: _isCapturing
                             ? const Center(
                                 child: CircularProgressIndicator(
-                                  color: Colors.black,
-                                  strokeWidth: 3,
+                                  color: Colors.black87,
+                                  strokeWidth: 2,
                                 ),
                               )
-                            : Icon(
-                                Icons.camera_alt,
-                                color: _allChecksPassed
-                                    ? Colors.black
-                                    : Colors.white38,
-                                size: 30,
-                              ),
+                            : null,
                       ),
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      _allChecksPassed
-                          ? "Tap to capture"
-                          : "Complete all checks above",
+                      _allChecksPassed ? "TAP TO CAPTURE" : "COMPLETE CHECKS",
                       style: TextStyle(
-                        color: _allChecksPassed ? Colors.white : Colors.white38,
-                        fontSize: 12,
+                        color: _allChecksPassed
+                            ? Colors.white60
+                            : Colors.white24,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 1.8,
                       ),
                     ),
                   ],

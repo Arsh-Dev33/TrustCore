@@ -3,7 +3,11 @@ import 'package:image/image.dart' as img;
 import 'dart:io';
 import 'dart:ui';
 
-enum TFLiteLabel { positive, negative }
+// Class index that means "detected" for each model.
+// If glasses always pass even when wearing them, flip _glassesPositiveClass to 0.
+// Check [TFLite] logs: if class0 > class1 when glasses are worn → set to 0.
+const int _maskPositiveClass    = 1; // mask_detector:    class0=no_mask, class1=mask
+const int _glassesPositiveClass = 1; // glasses_detector: class0=no_glasses, class1=glasses
 
 class TFLiteClassifierResult {
   final bool detected; // true = mask/glasses found
@@ -39,20 +43,21 @@ class TFLiteService {
   Future<TFLiteClassifierResult> detectMask(String imagePath,
       {Rect? faceRect}) async {
     return _runClassifier(_maskInterpreter, imagePath,
-        label: 'mask', faceRect: faceRect);
+        label: 'mask', positiveClassIndex: _maskPositiveClass, faceRect: faceRect);
   }
 
   /// Detect if glasses/spectacles are present
   Future<TFLiteClassifierResult> detectGlasses(String imagePath,
       {Rect? faceRect}) async {
     return _runClassifier(_glassesInterpreter, imagePath,
-        label: 'glasses', faceRect: faceRect);
+        label: 'glasses', positiveClassIndex: _glassesPositiveClass, faceRect: faceRect);
   }
 
   Future<TFLiteClassifierResult> _runClassifier(
     Interpreter? interpreter,
     String imagePath, {
     required String label,
+    required int positiveClassIndex,
     Rect? faceRect,
   }) async {
     if (interpreter == null) {
@@ -89,20 +94,18 @@ class TFLiteService {
 
       interpreter.run(input, output);
 
-      // output[0][0] = class 0 (e.g. no_mask / no_glasses)
-      // output[0][1] = class 1 (e.g. mask / glasses)
-      final class0Confidence = output[0][0]; // no_mask / no_glasses
-      final class1Confidence = output[0][1]; // mask / glasses
+      final c0 = output[0][0];
+      final c1 = output[0][1];
 
-      // Debug: print model output to help diagnose detection issues
-      print('[TFLite] $label: class0=$class0Confidence, class1=$class1Confidence');
+      // Debug: if glasses always pass when worn, flip _glassesPositiveClass to 0
+      print('[TFLite] $label: class0=$c0, class1=$c1 (positiveClass=$positiveClassIndex)');
 
-      // Use class with higher probability (class1 = mask/glasses)
-      final detected = class1Confidence > class0Confidence;
+      final negativeClassIndex = 1 - positiveClassIndex;
+      final detected = output[0][positiveClassIndex] > output[0][negativeClassIndex];
 
       return TFLiteClassifierResult(
         detected: detected,
-        confidence: class1Confidence,
+        confidence: output[0][positiveClassIndex],
       );
     } catch (e) {
       print('[TFLite] Error: $e');
